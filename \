@@ -1,0 +1,62 @@
+use reqwest;
+use serde::Deserialize;
+use thiserror::Error;
+use chrono::{Utc, DateTime, NaiveTime, Local, Datelike, Timelike};
+
+#[derive(Error, Debug)]
+pub enum PrayerRetrievalError {
+    #[error("Failed to retrive time for `{0}`")]
+    Redaction(String),
+    #[error("Reqwest error")]
+    Reqwest(#[from] reqwest::Error),
+    #[error("unknown data store error")]
+    Unknown,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Prayer {
+    pub time: String,
+    name: String,
+}
+
+#[derive(Debug)]
+pub struct Prayers {
+    pub prayers: Vec<Prayer>,
+}
+
+impl Prayers {
+    pub fn new(city: String, country: String) -> Result<Prayers, PrayerRetrievalError> {
+        let url = format!(
+            "https://api.aladhan.com/v1/timingsByCity?city={}&country={}",
+            city, country
+        );
+        let map = reqwest::blocking::get(url)?.json::<serde_json::Value>()?;
+        let mut prayers = Vec::new();
+        for (name, time) in map["data"]["timings"].as_object().unwrap() {
+            prayers.push(Prayer {
+                name: name.to_owned(),
+                time: time.to_string(),
+            })
+        }
+        Ok(Prayers { prayers })
+    }
+    pub fn get_next_prayer_unix(&mut self) -> Option<i32>{
+        let now = Local::now();
+        let prayer_hour: &str = &self.prayers.first()?.time[0..2];
+        let prayer_min: &str = &self.prayers.first()?.time[3..4];
+        let prayer_time = now
+            .with_hour(prayer_hour as u32)?
+            .with_minute()?;
+        println!("pt: {}, now: {}", prayer_time, now);
+        Some(1)
+    } 
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn toronto_canada_prayers() {
+        let mut m = Prayers::new("Toronto".to_owned(), "Canada".to_owned()).unwrap();
+        m.get_next_prayer_unix();
+    }
+}
